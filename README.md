@@ -60,25 +60,25 @@ CleanYourSol provides a simple interface for users to clean up their Solana wall
    3 Install Backend Dependencies:
    npm install
    cd ../server
+   **Create a .env file in the server directory with the following variables:
+   ADMIN_WALLET=<your-admin-wallet-public-key>
+   MONGO_URI=<your-mongodb-connection-string>
+   PORT=3000
+   - **For the frontend, create a .env file (or configure via Vite) with:
+   VITE_API_URL=https://cleanyoursol.com/api
+   ## Running the Project
+   # Frontend
+   - **Start the development server using Vite:
+   npm run dev
+   - **Access the main app at http://localhost:5173 and the standalone Top VIP page at http://localhost:5173/topvip.html.
+   # Backend
+   - **Start the Express server:
+   cd server
+   npm start
+   - ** Or use a process manager like PM2 in production.
 
 
-## Environment Variables
-- **Create a .env file in the server directory with the following variables:
-ADMIN_WALLET=<your-admin-wallet-public-key>
-MONGO_URI=<your-mongodb-connection-string>
-PORT=3000
-- **For the frontend, create a .env file (or configure via Vite) with:
-VITE_API_URL=https://cleanyoursol.com/api
-## Running the Project
-# Frontend
-- **Start the development server using Vite:
-npm run dev
-- **Access the main app at http://localhost:5173 and the standalone Top VIP page at http://localhost:5173/topvip.html.
-# Backend
-- **Start the Express server:
-cd server
-npm start
-- ** Or use a process manager like PM2 in production.
+
 
 ##Deployment
 #Frontend:

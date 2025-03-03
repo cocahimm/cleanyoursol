@@ -43,10 +43,35 @@ CleanYourSol provides a simple interface for users to clean up their Solana wall
 
 ## Project Structure
 
-/src ├── components │ ├── TokenBurnList.jsx // UI component for token burning │ └── ... // Other UI components ├── pages │ ├── topvipApp.jsx // Independent page for Top VIP leaderboard │ └── ... // Other pages ├── context │ └── WalletContext.jsx // Wallet context provider ├── utils │ ├── balanceUtils.js // Helper for SOL balance checking │ └── vipUtils.js // Helper for VIP logic ├── App.jsx // Main application component ├── main.jsx // Main entry point for the main app └── index.css // Global CSS (including Tailwind CSS)
+/src
+├── components 
+│ ├── TokenBurnList.jsx // UI component for token burning 
+│ └── ... // Other UI components
+├── pages
+│ ├── topvipApp.jsx // Independent page for Top VIP leaderboard 
+│ └── ... // Other pages 
+├── context 
+│ └── WalletContext.jsx // Wallet context provider 
+├── utils 
+│ ├── balanceUtils.js // Helper for SOL balance checking 
+│ └── vipUtils.js // Helper for VIP logic 
+├── App.jsx // Main application component 
+├── main.jsx // Main entry point for the main app 
+└── index.css // Global CSS (including Tailwind CSS)
 
-/server ├── controllers │ ├── burnController.js // Backend endpoint for burn & claim tokens │ ├── ledgerController.js // Controller to save ledger entries │ └── ...
-├── models │ ├── user.js // User schema │ ├── referral.js // Referral schema │ └── ledger.js // Ledger schema ├── routes │ ├── tokenRoutes.js // Token-related endpoints │ └── topVipRoutes.js // Endpoint for top VIP leaderboard └── server.js // Express server entry point
+/server 
+├── controllers
+│├── burnController.js // Backend endpoint for burn & claim tokens 
+│ ├── ledgerController.js // Controller to save ledger entries
+│ └── ...
+├── models 
+│ ├── user.js // User schema 
+│ ├── referral.js // Referral schema 
+│ └── ledger.js // Ledger schema 
+├── routes
+│ ├── tokenRoutes.js // Token-related endpoints 
+│ └── topVipRoutes.js // Endpoint for top VIP leaderboard 
+└── server.js // Express server entry point
 
 
 ## Setup & Installation

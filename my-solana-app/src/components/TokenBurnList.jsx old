@@ -1,0 +1,199 @@
+import { useState, useEffect } from "react";
+import { useWallet, useConnection } from "@solana/wallet-adapter-react";
+import axios from "axios";
+import { Buffer } from "buffer"; // Import polyfill
+window.Buffer = Buffer; // Gán cho global nếu cần
+
+const API_URL = import.meta.env.VITE_API_URL || "https://cleanyoursol.com/api";
+
+const TokenBurnList = ({ claimAllTokens }) => {
+  console.log("🔥 TokenBurnList Mounted");
+  const { publicKey, signTransaction } = useWallet();
+  const { connection } = useConnection();
+  const [tokens, setTokens] = useState([]);
+  const [selected, setSelected] = useState([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [burning, setBurning] = useState(false);
+
+  const shortenAddress = (address) =>
+    address.slice(0, 12) + "..." + address.slice(-12);
+
+  useEffect(() => {
+    if (!publicKey) {
+      console.log("🚫 Ví chưa kết nối");
+      return;
+    }
+    console.log("🔍 Đang fetch token cho ví:", publicKey.toBase58());
+    axios
+      .get(`${API_URL}/tokens`, { params: { wallet: publicKey.toBase58() } })
+      .then((res) => {
+        console.log("✅ API Response:", res.data);
+        setTokens(res.data.tokens || []);
+      })
+      .catch((error) => console.error("❌ Error fetching tokens:", error));
+  }, [publicKey]);
+
+  const toggleSelectAll = () => {
+    if (selectAll) {
+      setSelected([]);
+      setSelectAll(false);
+    } else {
+      const all = tokens.map((token) => token.mint);
+      setSelected(all);
+      setSelectAll(true);
+    }
+  };
+
+  const toggleSelect = (mint) => {
+    if (selected.includes(mint)) {
+      setSelected(selected.filter((item) => item !== mint));
+    } else {
+      setSelected([...selected, mint]);
+    }
+  };
+
+  const handleBurn = async () => {
+    if (selected.length === 0) return;
+    const confirmed = window.confirm(
+      "Are you sure you want to burn the selected tokens and claim empty tokens?"
+    );
+    if (!confirmed) return;
+
+    setBurning(true);
+    try {
+      // Lọc token được chọn
+      const tokensToBurn = tokens.filter((token) =>
+        selected.includes(token.mint)
+      );
+      console.log("🔍 Tokens to burn:", tokensToBurn);
+
+      // Build payload: chứa wallet và danh sách token cần burn
+      const payload = {
+        wallet: publicKey.toBase58(),
+        tokens: tokensToBurn.map((token) => ({
+          mint: token.mint,
+          balance: token.amount,
+          decimals: token.decimals,
+        })),
+      };
+      console.log("🔍 Payload send API /burn:", payload);
+
+      //old const { data } = await axios.post(`${API_URL}/burn`, payload);
+      const { data } = await axios.post(`${API_URL}/burn-claim`, payload);
+      console.log("✅ API /burn-claim response:", data);
+
+      if (!data.tx) throw new Error("Did not receive transaction from server");
+
+      // Chuyển transaction từ base64 sang Transaction object
+      const txBuffer = Buffer.from(data.tx, "base64");
+      const { Transaction } = await import("@solana/web3.js");
+      const transaction = Transaction.from(txBuffer);
+      console.log("🔍 Transaction object:", transaction);
+
+      // Yêu cầu ký transaction
+      const signedTx = await signTransaction(transaction);
+      console.log("🔍 Transaction đã được ký:", signedTx);
+
+      // Gửi transaction lên mạng lưới Solana
+      const txid = await connection.sendRawTransaction(signedTx.serialize());
+      console.log("🔍 Transaction sent, txid:", txid);
+
+      // Chờ xác nhận transaction
+      const confirmation = await connection.confirmTransaction(txid, "confirmed");
+      console.log("✅ Transaction confirmed:", confirmation);
+
+      // Tính số SOL thu về: mỗi token burn thu về 0.001624 SOL
+      const recoveredSol = selected.length * 0.001624;
+      alert(`Burned ${selected.length} token, collect ${recoveredSol.toFixed(6)} SOL`);
+
+      // Gọi hàm claimAllTokens nếu có
+      if (claimAllTokens) {
+        console.log("🔍 call claimAllTokens...");
+        await claimAllTokens();
+      }
+
+      // Refresh danh sách token sau khi burn
+      const res = await axios.get(`${API_URL}/tokens`, {
+        params: { wallet: publicKey.toBase58() },
+      });
+      console.log("✅ Refresh tokens:", res.data);
+      setTokens(res.data.tokens || []);
+      setSelected([]);
+      setSelectAll(false);
+    } catch (error) {
+      console.error("❌ Error burning tokens:", error);
+      alert("An error occurred during the token burning process");
+    } finally {
+      setBurning(false);
+    }
+  };
+
+  return (
+    <div className="bg-gray-800 p-6 rounded-lg shadow-md">
+      <h2 className="text-2xl font-bold mb-4">🔥 Burn Tokens</h2>
+
+      <div className="flex justify-between mb-4">
+        <button
+          onClick={toggleSelectAll}
+          className="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded"
+        >
+          {selectAll ? "Deselect all" : "Select all"}
+        </button>
+        <button
+          onClick={handleBurn}
+          disabled={burning || selected.length === 0}
+          className="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded"
+        >
+          {burning ? "Burning..." : `Burn (${selected.length} token)`}
+        </button>
+      </div>
+
+      {tokens.length > 0 ? (
+        <div className="grid grid-cols-2 gap-4">
+          {tokens.map((token) => {
+            const isSOL =
+              token.mint === "So11111111111111111111111111111111111111112";
+            return (
+              <div
+                key={token.mint}
+                className="flex items-center bg-gray-700 p-4 rounded-lg"
+              >
+                <input
+                  type="checkbox"
+                  className="mr-2"
+                  checked={selected.includes(token.mint)}
+                  onChange={() => toggleSelect(token.mint)}
+                />
+                <img
+                  src={
+                    token.image ||
+                    "https://dummyimage.com/40x40/cccccc/000000.png&text=No+Image"
+                  }
+                  alt={token.name}
+                  className="w-10 h-10 rounded-full mr-2"
+                />
+                <div className="flex-1">
+                  <p className="text-lg font-semibold">
+                    {token.name} ({token.symbol})
+                  </p>
+                  <p className="text-sm text-gray-400">{shortenAddress(token.mint)}</p>
+                  <p className="mt-1">
+                    {isSOL ? "SOL:" : "Amount:"} {token.amount}
+                  </p>
+                  <p className="text-sm text-gray-400">
+                    Return: ~ {Number(0.001624).toFixed(6)} SOL /Token
+                  </p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-gray-400">⏳ No tokens available...</p>
+      )}
+    </div>
+  );
+};
+
+export default TokenBurnList;
+

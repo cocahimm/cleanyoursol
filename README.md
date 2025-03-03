@@ -51,9 +51,7 @@ CleanYourSol provides a simple interface for users to clean up their Solana wall
 
 ## Setup & Installation
 
-1. **Clone the Repository:**
-
-   ```bash
+1. **Clone the Repository:**  
    git clone https://github.com/yourusername/CleanYourSol.git
    cd CleanYourSol
 2. Install Frontend Dependencies:
@@ -63,7 +61,47 @@ npm install
 cd ../server
 npm install
 
-Environment Variables
-Create a .env file in the server directory with the following variables:
+## Environment Variables
+- **Create a .env file in the server directory with the following variables:
+ADMIN_WALLET=<your-admin-wallet-public-key>
+MONGO_URI=<your-mongodb-connection-string>
+PORT=3000
+- **For the frontend, create a .env file (or configure via Vite) with:
+VITE_API_URL=https://cleanyoursol.com/api
+## Running the Project
+# Frontend
+- **Start the development server using Vite:
+npm run dev
+- **Access the main app at http://localhost:5173 and the standalone Top VIP page at http://localhost:5173/topvip.html.
+# Backend
+- **Start the Express server:
+cd server
+npm start
+- ** Or use a process manager like PM2 in production.
 
+##Deployment
+#Frontend:
+- **Build your frontend assets using npm run build and deploy the output to your preferred static hosting provider.
+#Backend:
+- **Deploy your Node.js Express server (e.g., on Heroku, DigitalOcean, or another VPS) and ensure your MongoDB connection is properly configured.
 
+##Usage
+1. Connect Wallet:
+- **Users connect their Solana wallet (e.g., Phantom) via the wallet adapter.
+
+2. Burn Tokens:
+
+- **Users can select tokens (only those with a positive balance are shown).
+- **A "Select all" button will only select visible tokens.
+- **Users can switch between Fast mode (processing up to 10 tokens per transaction) and Slow mode (processing one token per transaction) using a toggle.
+- **After confirmation, the selected tokens are burned, their accounts are closed, and the user receives a SOL refund.
+- **Referral fees are deducted and transferred according to the configured percentages and the referrer's VIP level.
+3. Referral & VIP Rewards:
+
+- **If a referral code is provided (either from localStorage or returned by the backend), referral fees are processed.
+- **Ledger entries are saved for each burn/claim transaction, and referral counts update the VIP levels accordingly.
+4.Top VIP Leaderboard:
+
+- **A dedicated Top VIP page displays the top 50 users with the highest number of claimed referrals, including their wallet address, VIP level, and total referrals.
+## Contributing
+   This project is licensed under the MIT License. See the LICENSE file for details.

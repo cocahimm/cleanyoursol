@@ -800,7 +800,7 @@ const confirmPayload = {
        // referral: referralCode
      // };
 */
-
+/* test
 const txids = [];
 for (let txBase64 of data.txs) {
   const txBuffer = Buffer.from(txBase64, "base64");
@@ -832,6 +832,7 @@ for (let txBase64 of data.txs) {
   } catch (err) {
     console.error("Error during signing process:", err);
   }
+  
   if (!txid && signTransaction) {
     const signedTx = await signTransaction(transaction);
     console.log("Signed transaction:", signedTx);
@@ -861,10 +862,95 @@ const confirmPayload = {
   referral: referralCode
 };
 
+*/
+const txids = [];
+
+for (let txBase64 of data.txs) {
+  const txBuffer = Buffer.from(txBase64, "base64");
+  let transaction = Transaction.from(txBuffer);
+  let txid;
+
+  try {
+    if (window.solana && window.solana.isPhantom) {
+      // ✅ Đảm bảo `feePayer` và `recentBlockhash` hợp lệ trước khi ký
+      transaction.feePayer = transaction.feePayer || window.solana.publicKey;
+      transaction.recentBlockhash = transaction.recentBlockhash || (await connection.getLatestBlockhash()).blockhash;
+
+      // 🛠 Debug trước khi gửi
+      console.log("📌 Transaction:", transaction);
+      console.log("📌 Fee Payer:", transaction.feePayer?.toBase58());
+      console.log("📌 Blockhash:", transaction.recentBlockhash);
+      console.log("📌 Instructions:", transaction.instructions.length);
+
+      // ✅ Gọi `signAndSendTransaction` của Phantom
+      console.log("🔹 Using signAndSendTransaction...");
+      const result = await window.solana.signAndSendTransaction(transaction);
+      console.log("✅ Result from signAndSendTransaction:", result);
+
+      if (result && result.signature) {
+        txid = result.signature;
+      } else {
+        console.warn("⚠️ signAndSendTransaction did not return a valid signature.");
+      }
+    }
+  } catch (err) {
+    console.error("❌ Error in signAndSendTransaction:", err);
+
+    // 🔹 Nếu lỗi do blockhash hết hạn, cập nhật lại blockhash rồi fallback sang `signTransaction`
+    if (err.message.includes("block height exceeded") || err.message.includes("blockhash expired")) {
+      console.warn("⚠️ Transaction expired, retrying with a new blockhash...");
+      transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+
+      try {
+        const signedTx = await window.solana.signTransaction(transaction);
+        const rawTx = signedTx.serialize();
+        txid = await connection.sendRawTransaction(rawTx, { skipPreflight: false });
+      } catch (fallbackErr) {
+        console.error("❌ Error in signTransaction fallback:", fallbackErr);
+      }
+    }
+  }
+
+  if (txid) {
+    console.log("✅ Transaction submitted, txid:", txid);
+
+    // ✅ Xác nhận giao dịch trên blockchain
+    const latestBlockhash = await connection.getLatestBlockhash();
+    await connection.confirmTransaction(
+      {
+        signature: txid,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      },
+      { commitment: "confirmed" }
+    );
+
+    console.log("✅ Transaction confirmed, txid:", txid);
+    txids.push(txid);
+  } else {
+    console.error("❌ Failed to get txid for transaction.");
+  }
+}
+
+// ✅ Tạo payload xác nhận giao dịch
+const firstTxid = txids[0]; // Lấy txid đầu tiên
+const confirmPayload = {
+  publicKey: window.solana.publicKey.toBase58(),
+  tokenIds: tokensToBurn.map((token) => token.mint),
+  txHash: firstTxid,
+  referral: referralCode,
+};
+
+console.log("🔥 Confirm Payload:", confirmPayload);
+
+
+
+
 
       const confirmResponse = await axios.post(`${API_URL}/confirm-claim`, confirmPayload);
+	
       console.log("Response from confirm-claim:", confirmResponse.data);
-      Swal.fire({
+      /*Swal.fire({
         title: "Success",
         text: `Burn & Claim succeeded!`,
         icon: "success",
@@ -874,7 +960,8 @@ const confirmPayload = {
           confirmButton: "bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded",
         },
       });
-      window.location.reload();
+	  */
+      //window.location.reload();
     } catch (error) {
       console.error('Error during burn & claim process:', error);
       Swal.fire({
@@ -899,6 +986,7 @@ const confirmPayload = {
   return (
     <div className="rounded-lg p-4">
       <h2 className="text-2xl font-bold mb-4">🔥 Burn Tokens</h2>
+	  <p className="text-green-400 mt-4">To keep this tool up and running, a 20% donation is included for the recovered SOL.</p>
       {loading ? (
         <p className="text-green-400 mt-4">Loading tokens...</p>
       ) : filteredTokens.length === 0 ? (

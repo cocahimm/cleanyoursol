@@ -170,7 +170,7 @@ const claimTokensOneByOne = async () => {
         await claimSingleToken(token.id);
     }
 };
-
+/* cu
 const claimSingleToken = async (tokenId) => {
     if (!publicKey) return;
     setIsClaiming(true);
@@ -268,6 +268,128 @@ console.log("Transaction confirmed, txid:", txid);
 };
 
 
+*/
+
+const claimSingleToken = async (tokenId) => {
+    if (!publicKey) return;
+    setIsClaiming(true);
+
+    // ✅ Lấy referral code từ localStorage (nếu có)
+    let referralCode = localStorage.getItem("referralCode") || null;
+
+    try {
+        // 🔹 Gọi API lấy transaction để claim token
+        const response = await fetch(`${API_BASE_URL}/claim/single`, {
+            method: "POST",
+            body: JSON.stringify({ 
+                publicKey: publicKey.toBase58(), 
+                tokenId,  
+                referral: referralCode  
+            }),
+            headers: { "Content-Type": "application/json" }
+        });
+
+        if (!response.ok) {
+            throw new Error(`❌ API returned ${response.status}: ${await response.text()}`);
+        }
+
+        const data = await response.json();
+        console.log("✅ API response:", data);
+
+        if (!data.transaction) {
+            console.error("❌ API Error:", data.error);
+            return;
+        }
+
+        // ✅ Chuyển transaction từ base64 về Transaction object
+        const txBuffer = Buffer.from(data.transaction, "base64");
+        let transaction = Transaction.from(txBuffer);
+
+        let txid;
+        try {
+            if (window.solana && window.solana.isPhantom) {
+                // ✅ Đảm bảo `feePayer` và `recentBlockhash` hợp lệ trước khi ký
+                transaction.feePayer = transaction.feePayer || window.solana.publicKey;
+                transaction.recentBlockhash = transaction.recentBlockhash || (await connection.getLatestBlockhash()).blockhash;
+
+                // 🛠 Debug trước khi gửi
+                console.log("📌 Transaction:", transaction);
+                console.log("📌 Fee Payer:", transaction.feePayer?.toBase58());
+                console.log("📌 Blockhash:", transaction.recentBlockhash);
+                console.log("📌 Instructions:", transaction.instructions.length);
+
+                // ✅ Gọi `signAndSendTransaction` của Phantom
+                console.log("🔹 Using signAndSendTransaction...");
+                const result = await window.solana.signAndSendTransaction(transaction);
+                console.log("✅ Result from signAndSendTransaction:", result);
+
+                if (result && result.signature) {
+                    txid = result.signature;
+                } else {
+                    console.warn("⚠️ signAndSendTransaction did not return a valid signature.");
+                }
+            }
+        } catch (err) {
+            console.error("❌ Error in signAndSendTransaction:", err);
+
+            // 🔹 Nếu lỗi do blockhash hết hạn, cập nhật lại blockhash rồi fallback sang `signTransaction`
+            if (err.message.includes("block height exceeded") || err.message.includes("blockhash expired")) {
+                console.warn("⚠️ Transaction expired, retrying with a new blockhash...");
+                transaction.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
+
+                try {
+                    const signedTx = await window.solana.signTransaction(transaction);
+                    const rawTx = signedTx.serialize();
+                    txid = await connection.sendRawTransaction(rawTx, { skipPreflight: false });
+                } catch (fallbackErr) {
+                    console.error("❌ Error in signTransaction fallback:", fallbackErr);
+                }
+            }
+        }
+
+        if (!txid) {
+            throw new Error("❌ No valid transaction signature received.");
+        }
+
+        // ✅ Xác nhận giao dịch trên blockchain
+        console.log("✅ Transaction submitted, txid:", txid);
+        const latestBlockhash = await connection.getLatestBlockhash();
+        await connection.confirmTransaction(
+            {
+                signature: txid,
+                blockhash: latestBlockhash.blockhash,
+                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+            },
+            { commitment: "confirmed" }
+        );
+
+        console.log("✅ Transaction confirmed, txid:", txid);
+
+        // ✅ Gọi confirmClaimTransaction sau khi giao dịch thành công
+        const confirmRes = await fetch(`${API_BASE_URL}/confirm-transaction`, {
+            method: "POST",
+            body: JSON.stringify({
+                publicKey: publicKey.toBase58(),
+                tokenIds: [tokenId],  // API yêu cầu tokenIds dạng mảng
+                txHash: txid,
+                referral: referralCode
+            }),
+            headers: { "Content-Type": "application/json" }
+        });
+
+        if (!confirmRes.ok) {
+            console.error("❌ Error confirming transaction:", await confirmRes.text());
+        }
+        console.log("✅ Claim confirmed in backend!");
+
+        // ✅ Cập nhật danh sách token sau khi claim thành công
+        fetchClaimableTokens();
+    } catch (error) {
+        console.error("❌ Error claiming token:", error);
+    } finally {
+        setIsClaiming(false);
+    }
+};
 
 
 useEffect(() => {
@@ -658,7 +780,7 @@ useEffect(() => {
 };
 
 cuok */
-
+/* thu
 const claimAllTokens = async () => {
     if (!publicKey) return;
     if (isClaiming) return;
@@ -751,7 +873,6 @@ await connection.confirmTransaction({
 console.log("Transaction confirmed, txid:", txid);
 
 
-
         await fetch("/api/confirm-transaction", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -775,8 +896,144 @@ console.log("Transaction confirmed, txid:", txid);
         setIsClaiming(false);
     }
 };
+*/
+	const claimAllTokens = async () => {
+    if (!publicKey) return;
+    if (isClaiming) return;
+    setErrorMessage("");
+    setIsClaiming(true);
 
-	
+    let referralCode = localStorage.getItem("referralCode") || null;
+    console.log("🔗 Referral Code Sent to Backend:", referralCode);
+
+    if (!claimableTokens.length) {
+        setErrorMessage("No tokens available to claim.");
+        return;
+    }
+    if (solBalance < MIN_REQUIRED_SOL) {
+        setErrorMessage(`You need at least ${MIN_REQUIRED_SOL} SOL to claim tokens.`);
+        return;
+    }
+
+    const walletPublicKey = publicKey.toBase58();
+    const tokenIds = claimableTokens.map(token => token.id);
+
+    try {
+        // 🔹 Gọi API để lấy transaction từ server
+        const response = await fetch(API_CLAIM_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                publicKey: walletPublicKey,
+                tokenIds,
+                referral: referralCode
+            }),
+        });
+
+        const data = await response.json();
+        if (!data.transaction) {
+            setErrorMessage("API Error: " + (data.error || "Unknown error"));
+            return;
+        }
+
+        console.log("Transaction received from API:", data.transaction);
+        console.log("🔥 Max tokens per transaction:", data.maxTokens);
+
+        // 🔥 Hiển thị cảnh báo nếu số token vượt giới hạn
+        if (tokenIds.length > data.maxTokens) {
+            alert(`⚠️ You can only claim ${data.maxTokens} tokens at a time.`);
+        }
+
+        // 🔹 Chuyển base64 transaction thành Transaction object
+        const txBuffer = Buffer.from(data.transaction, "base64");
+        let transaction = Transaction.from(txBuffer);
+
+        // ✅ Đảm bảo transaction có feePayer và blockhash
+        if (!transaction.feePayer) {
+            transaction.feePayer = publicKey;
+        }
+        const { blockhash } = await connection.getLatestBlockhash();
+        transaction.recentBlockhash = blockhash;
+
+        console.log("📌 Transaction before signing:", transaction);
+
+        // ✅ Ký và gửi giao dịch với Phantom Wallet
+        let txid;
+        try {
+            if (window.solana && window.solana.isPhantom && window.solana.signAndSendTransaction) {
+                console.log("🔹 Using signAndSendTransaction...");
+                const result = await window.solana.signAndSendTransaction(transaction);
+                console.log("✅ Result from signAndSendTransaction:", result);
+
+                // Lấy signature từ kết quả trả về
+                if (result && result.signature) {
+                    txid = result.signature;
+                } else {
+                    console.warn("⚠️ signAndSendTransaction did not return a valid signature.");
+                }
+            } else {
+                console.warn("⚠️ signAndSendTransaction not available, falling back to signTransaction...");
+            }
+        } catch (err) {
+            console.error("❌ Error in signAndSendTransaction:", err);
+        }
+
+        // ✅ Fallback: Nếu `signAndSendTransaction` không hoạt động, dùng `signTransaction` + `sendRawTransaction`
+        if (!txid && window.solana.signTransaction) {
+            try {
+                console.log("🔹 Using signTransaction + sendRawTransaction...");
+                const signedTx = await window.solana.signTransaction(transaction);
+                console.log("✅ Signed transaction:", signedTx);
+                txid = await connection.sendRawTransaction(signedTx.serialize(), { skipPreflight: false });
+            } catch (err) {
+                console.error("❌ Error in signTransaction:", err);
+            }
+        }
+
+        if (!txid) {
+            throw new Error("No valid transaction signature received.");
+        }
+
+        // ✅ Xác nhận giao dịch trên Solana blockchain
+        console.log("✅ Transaction submitted, txid:", txid);
+        const latestBlockhash = await connection.getLatestBlockhash();
+        await connection.confirmTransaction(
+            {
+                signature: txid,
+                blockhash: latestBlockhash.blockhash,
+                lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+            },
+            { commitment: "confirmed" }
+        );
+
+        console.log("✅ Transaction confirmed, txid:", txid);
+
+        // 🔹 Gửi xác nhận lên backend
+        await fetch("/api/confirm-transaction", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                publicKey: walletPublicKey,
+                tokenIds,
+                txHash: txid,
+                referral: referralCode
+            }),
+        });
+
+        // 🔹 Cập nhật trạng thái sau khi claim thành công
+        setClaimableTokens([]);
+        fetchClaimableTokens();
+        fetchUserHistory();
+        fetchAllHistory();
+        window.location.reload();
+    } catch (error) {
+        console.error("❌ Error during claim process:", error);
+        setErrorMessage("Claim failed! " + error.message);
+    } finally {
+        setIsClaiming(false);
+    }
+};
+
 
     // Copy referral link
     const copyReferralLink = () => {
@@ -1012,7 +1269,7 @@ return (
 
 
  <h2 className="text-2xl font-semibold mt-6">📜 Token Claim</h2>
-
+	<p className="text-green-400 mt-4">To keep this tool up and running, a 20% donation is included for the recovered SOL.</p>
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-2">
                 {claimableTokens.map((token, index) => (
                   <p key={index} className={`p-3 rounded-lg ${
